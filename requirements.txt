@@ -1,4 +1,4 @@
-Flask
-opencv-python
 mediapipe
-numpy
+opencv-python-headless
+Flask
+gunicorn

@@ -4,6 +4,7 @@ import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+import os
 
 app = Flask(__name__)
 
@@ -152,4 +153,5 @@ def get_analysis():
     return jsonify({"analysis": latest_analysis})
 
 if __name__ == '__main__':
-    app.run(debug=True, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, threaded=True)

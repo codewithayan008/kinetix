@@ -6,10 +6,8 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import base64
-import time
 
 app = Flask(__name__)
-# Initialize SocketIO to handle real-time video frames
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 base_options = python.BaseOptions(model_asset_path='pose_landmarker_heavy.task')
@@ -36,97 +34,105 @@ def calculate_angle(a, b, c):
         angle = 360 - angle
     return int(angle)
 
+# Monotonic timestamp counter required by MediaPipe video mode
+frame_counter = 0
+
 @socketio.on('process_frame')
 def handle_frame(data):
-    # Decode the base64 image sent from the browser
-    encoded_data = data.split(',')[1]
-    nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    if frame is None:
-        return
+    global frame_counter
+    try:
+        if not data or ',' not in data:
+            return
 
-    frame = cv2.flip(frame, 1)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-    timestamp_ms = int(time.time() * 1000)
-    
-    detection_result = detector.detect_for_video(mp_image, timestamp_ms)
-    analysis_parts = []
-    latest_analysis = "Waiting to start analysis..."
-    
-    if detection_result.pose_landmarks:
-        landmarks = detection_result.pose_landmarks[0]
-        h, w, _ = frame.shape
+        encoded_data = data.split(',')[1]
+        nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        def is_visible(idx, threshold=0.5):
-            return landmarks[idx].visibility > threshold if hasattr(landmarks[idx], 'visibility') else True
+        if frame is None:
+            return
 
-        def get_coords(index):
-            return [landmarks[index].x, landmarks[index].y]
-
-        try:
-            # --- HEAD ---
-            if is_visible(0) and is_visible(7) and is_visible(8):
-                nose = landmarks[0]
-                left_ear = landmarks[7]
-                right_ear = landmarks[8]
-                ear_mid_x = (left_ear.x + right_ear.x) / 2.0
-                ear_dist = abs(left_ear.x - right_ear.x)
-                
-                if ear_dist > 0:
-                    turn_ratio = (nose.x - ear_mid_x) / (ear_dist / 2.0)
-                    turn_ratio = max(-1.0, min(1.0, turn_ratio))
-                    head_angle = int(turn_ratio * 90)
-                    if head_angle > 15:
-                        analysis_parts.append(f"Head: Left {abs(head_angle)}°")
-                    elif head_angle < -15:
-                        analysis_parts.append(f"Head: Right {abs(head_angle)}°")
-                    else:
-                        analysis_parts.append("Head: Straight")
-
-            # --- ELBOWS & KNEES ---
-            if is_visible(12) and is_visible(14) and is_visible(16):
-                analysis_parts.append(f"Right Elbow: {calculate_angle(get_coords(12), get_coords(14), get_coords(16))}°")
-            if is_visible(11) and is_visible(13) and is_visible(15):
-                analysis_parts.append(f"Left Elbow: {calculate_angle(get_coords(11), get_coords(13), get_coords(15))}°")
-            if is_visible(24) and is_visible(26) and is_visible(28):
-                analysis_parts.append(f"Right Knee: {calculate_angle(get_coords(24), get_coords(26), get_coords(28))}°")
-            if is_visible(23) and is_visible(25) and is_visible(27):
-                analysis_parts.append(f"Left Knee: {calculate_angle(get_coords(23), get_coords(25), get_coords(27))}°")
-
-            if analysis_parts:
-                latest_analysis = " | ".join(analysis_parts)
-            else:
-                latest_analysis = "Position yourself clearly in front of the camera."
-
-        except Exception:
-            pass
+        frame = cv2.flip(frame, 1)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
         
-        # Draw skeleton
-        for connection in POSE_CONNECTIONS:
-            start_idx, end_idx = connection
-            if start_idx < len(landmarks) and end_idx < len(landmarks):
-                start_pt = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
-                end_pt = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
-                cv2.line(frame, start_pt, end_pt, (245, 66, 230), 2)
+        # Increment timestamp cleanly so MediaPipe never crashes
+        frame_counter += 1
+        timestamp_ms = frame_counter * 33
         
-        for lm in landmarks:
-            cx, cy = int(lm.x * w), int(lm.y * h)
-            cv2.circle(frame, (cx, cy), 3, (245, 117, 66), -1)
-    else:
-        latest_analysis = "No body detected."
-    
-    # Encode processed frame back to base64
-    _, buffer = cv2.imencode('.jpg', frame)
-    encoded_image = base64.b64encode(buffer).decode('utf-8')
-    
-    # Send image and analysis back to frontend
-    emit('frame_processed', {
-        'image': 'data:image/jpeg;base64,' + encoded_image,
-        'analysis': latest_analysis
-    })
+        detection_result = detector.detect_for_video(mp_image, timestamp_ms)
+        analysis_parts = []
+        latest_analysis = "Position yourself clearly in front of the camera."
+        
+        if detection_result.pose_landmarks:
+            landmarks = detection_result.pose_landmarks[0]
+            h, w, _ = frame.shape
+            
+            def is_visible(idx, threshold=0.5):
+                return landmarks[idx].visibility > threshold if hasattr(landmarks[idx], 'visibility') else True
 
+            def get_coords(index):
+                return [landmarks[index].x, landmarks[index].y]
+
+            try:
+                # --- HEAD ---
+                if is_visible(0) and is_visible(7) and is_visible(8):
+                    nose = landmarks[0]
+                    left_ear = landmarks[7]
+                    right_ear = landmarks[8]
+                    ear_mid_x = (left_ear.x + right_ear.x) / 2.0
+                    ear_dist = abs(left_ear.x - right_ear.x)
+                    
+                    if ear_dist > 0:
+                        turn_ratio = (nose.x - ear_mid_x) / (ear_dist / 2.0)
+                        turn_ratio = max(-1.0, min(1.0, turn_ratio))
+                        head_angle = int(turn_ratio * 90)
+                        if head_angle > 15:
+                            analysis_parts.append(f"Head: Left {abs(head_angle)}°")
+                        elif head_angle < -15:
+                            analysis_parts.append(f"Head: Right {abs(head_angle)}°")
+                        else:
+                            analysis_parts.append("Head: Straight")
+
+                # --- ELBOWS & KNEES ---
+                if is_visible(12) and is_visible(14) and is_visible(16):
+                    analysis_parts.append(f"Right Elbow: {calculate_angle(get_coords(12), get_coords(14), get_coords(16))}°")
+                if is_visible(11) and is_visible(13) and is_visible(15):
+                    analysis_parts.append(f"Left Elbow: {calculate_angle(get_coords(11), get_coords(13), get_coords(15))}°")
+                if is_visible(24) and is_visible(26) and is_visible(28):
+                    analysis_parts.append(f"Right Knee: {calculate_angle(get_coords(24), get_coords(26), get_coords(28))}°")
+                if is_visible(23) and is_visible(25) and is_visible(27):
+                    analysis_parts.append(f"Left Knee: {calculate_angle(get_coords(23), get_coords(25), get_coords(27))}°")
+
+                if analysis_parts:
+                    latest_analysis = " | ".join(analysis_parts)
+            except Exception:
+                pass
+            
+            # Draw skeleton
+            for connection in POSE_CONNECTIONS:
+                start_idx, end_idx = connection
+                if start_idx < len(landmarks) and end_idx < len(landmarks):
+                    start_pt = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
+                    end_pt = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
+                    cv2.line(frame, start_pt, end_pt, (245, 66, 230), 2)
+            
+            for lm in landmarks:
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                cv2.circle(frame, (cx, cy), 3, (245, 117, 66), -1)
+        else:
+            latest_analysis = "No body detected."
+        
+        # Encode and ALWAYS emit back to frontend
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        encoded_image = base64.b64encode(buffer).decode('utf-8')
+        
+        emit('frame_processed', {
+            'image': 'data:image/jpeg;base64,' + encoded_image,
+            'analysis': latest_analysis
+        })
+        
+    except Exception as e:
+        print(f"Frame error: {e}")
 
 @app.route('/')
 def index():
@@ -140,5 +146,4 @@ def setup():
     return render_template('setup.html')
 
 if __name__ == '__main__':
-    # Use socketio.run instead of app.run
     socketio.run(app, debug=True)

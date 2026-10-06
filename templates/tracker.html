@@ -8,21 +8,17 @@
         img { width: 100%; display: block; }
         button { padding: 12px 30px; font-size: 1.2rem; background: #00d2ff; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px; }
         #output { margin-top: 20px; font-size: 1.5rem; color: #00d2ff; min-height: 40px; }
-        /* Hide the local video stream and canvas, we only want to see the processed image from the server */
         #localVideo, #hiddenCanvas { display: none; }
     </style>
-    <!-- Include the Socket.IO client library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
 </head>
 <body>
     <h2>Welcome, {{ name }}</h2>
     
     <div class="camera-container">
-        <!-- Displays the processed frame returning from the server -->
         <img id="processedFeed" alt="Camera feed will appear here when analysis starts">
     </div>
 
-    <!-- Hidden elements required for local webcam capture -->
     <video id="localVideo" autoplay playsinline></video>
     <canvas id="hiddenCanvas"></canvas>
 
@@ -41,20 +37,18 @@
         let isAnalyzing = false;
         let intervalId = null;
 
-        // 1. Request access to the user's webcam
         async function setupCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
                 video.srcObject = stream;
+                await video.play(); // CRITICAL: Forces the video stream to start playing
                 
-                // Set canvas size to match the video resolution
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                };
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                console.log("Camera initialized successfully.");
             } catch (err) {
-                console.error("Camera access denied or unavailable:", err);
-                output.innerText = "Error: Please allow camera permissions in your browser.";
+                console.error("Camera access error:", err);
+                output.innerText = "Error: Please allow camera permissions.";
             }
         }
         setupCamera();
@@ -67,9 +61,7 @@
                 btn.style.background = "#ff4757";
                 output.innerText = "Warming up camera...";
                 
-                // Grab a frame and send it to the server every 100ms (10 fps) 
-                // Adjust this timer based on your server speed
-                intervalId = setInterval(sendFrame, 100);
+                intervalId = setInterval(sendFrame, 150); // ~6-7 fps for stable transmission
             } else {
                 btn.innerText = "Start Analyse";
                 btn.style.background = "#00d2ff";
@@ -78,17 +70,16 @@
             }
         }
 
-        // 2. Capture a frame and emit it to Flask
         function sendFrame() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            if (video.readyState >= video.HAVE_CURRENT_DATA) {
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                // Compress to JPEG to save bandwidth
-                const dataURL = canvas.toDataURL('image/jpeg', 0.6);
+                const dataURL = canvas.toDataURL('image/jpeg', 0.5);
                 socket.emit('process_frame', dataURL);
+            } else {
+                console.warn("Video not ready yet, readyState:", video.readyState);
             }
         }
 
-        // 3. Receive the processed frame and stats back from Flask
         socket.on('frame_processed', function(data) {
             if (isAnalyzing) {
                 processedFeed.src = data.image;

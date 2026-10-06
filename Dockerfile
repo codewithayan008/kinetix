@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Start the server using Render's dynamic port
-CMD gunicorn app:app --bind 0.0.0.0:$PORT
+CMD gunicorn --worker-class eventlet -w 1 app:app --bind 0.0.0.0:$PORT

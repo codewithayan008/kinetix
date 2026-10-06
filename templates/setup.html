@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kinetix - Setup</title>
+    <style>
+        body {
+            background: #f4f7f6; font-family: sans-serif;
+            display: flex; justify-content: center; align-items: center; height: 100vh;
+        }
+        .card {
+            background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px;
+        }
+        input, select, button { width: 100%; margin-bottom: 20px; padding: 10px; box-sizing: border-box; }
+        button { background: #2a5298; color: white; border: none; cursor: pointer; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Enter Details</h2>
+        <form action="/setup" method="POST">
+            <input type="text" name="name" placeholder="Full Name" required>
+            <input type="number" name="age" placeholder="Age" required>
+            <select name="sex" required>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+            </select>
+            <button type="submit">Continue to Camera</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kinetix - Tracker</title>
+    <style>
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; }
+        .camera-container { margin: 20px auto; border: 4px solid #333; border-radius: 10px; overflow: hidden; width: 640px; }
+        img { width: 100%; display: block; }
+        button { padding: 12px 30px; font-size: 1.2rem; background: #00d2ff; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px; }
+        #output { margin-top: 20px; font-size: 1.5rem; color: #00d2ff; min-height: 40px; }
+    </style>
+</head>
+<body>
+    <h2>Welcome, {{ name }}</h2>
+    
+    <div class="camera-container">
+        <!-- Calls the Flask video streaming endpoint -->
+        <img src="{{ url_for('video_feed') }}" alt="Camera Feed">
+    </div>
+
+    <button id="analyzeBtn" onclick="toggleAnalysis()">Start Analyse</button>
+    <div id="output">Analysis is paused.</div>
+
+    <script>
+        let isAnalyzing = false;
+        let intervalId = null;
+
+        function toggleAnalysis() {
+            isAnalyzing = !isAnalyzing;
+            const btn = document.getElementById("analyzeBtn");
+            const output = document.getElementById("output");
+
+            if (isAnalyzing) {
+                btn.innerText = "Stop Analyse";
+                btn.style.background = "#ff4757";
+                // Poll the server every 500ms for new movement data
+                intervalId = setInterval(fetchAnalysis, 500);
+            } else {
+                btn.innerText = "Start Analyse";
+                btn.style.background = "#00d2ff";
+                clearInterval(intervalId);
+                output.innerText = "Analysis is paused.";
+            }
+        }
+
+        async function fetchAnalysis() {
+            try {
+                const response = await fetch('/get_analysis');
+                const data = await response.json();
+                document.getElementById("output").innerText = data.analysis;
+            } catch (error) {
+                console.error("Error fetching analysis:", error);
+            }
+        }
+    </script>
+</body>
+</html>
